@@ -29,5 +29,20 @@ class TelegramTool(BaseTool):
         response.raise_for_status()
         return response.json()
 
+    def get_me(self) -> dict[str, Any]:
+        """Return info about this bot; useful to verify the token is valid."""
+        response = requests.get(f"{self._base_url}/getMe", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()["result"]
+
+    def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[dict[str, Any]]:
+        """Long-poll for new messages, returning Telegram `Update` objects since `offset`."""
+        params: dict[str, Any] = {"timeout": timeout}
+        if offset is not None:
+            params["offset"] = offset
+        response = requests.get(f"{self._base_url}/getUpdates", params=params, timeout=timeout + self.timeout)
+        response.raise_for_status()
+        return response.json()["result"]
+
     def run(self, chat_id: str | int, text: str, parse_mode: str | None = None) -> Any:
         return self.send_message(chat_id, text, parse_mode)

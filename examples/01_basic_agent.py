@@ -2,7 +2,7 @@
 
 Runs end-to-end with a stubbed LLM so it works without any API keys.
 To use a real model, drop the `completion_fn` argument - ArabicAgent will
-call litellm with `model="gemini-1.5-pro"` (or "gpt-4o", "qwen2.5", ...)
+call litellm with `model="gemini/gemini-2.5-flash"` (or "gpt-4o", "qwen2.5", ...)
 using whichever provider credentials are configured in your environment.
 """
 
@@ -27,7 +27,7 @@ def fake_completion(**kwargs):
 
 agent = ArabicAgent(
     name="inventory-agent",
-    model="gemini-1.5-pro",  # or "qwen2.5", "gpt-4o"
+    model="gemini/gemini-2.5-flash",  # or "qwen2.5", "gpt-4o"
     dialect="gulf",
     hallucination_guard=ArabicHallucinationGuard(
         citation_required=True,

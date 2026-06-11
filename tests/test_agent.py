@@ -1,3 +1,6 @@
+import json
+from unittest.mock import patch
+
 from arabic_agentforge.core import ArabicAgent
 from arabic_agentforge.guards import ArabicHallucinationGuard, Citation
 from arabic_agentforge.nlp import Dialect
@@ -95,6 +98,18 @@ def test_low_finish_reason_confidence_fails_guard():
     assert "confidence" in result.guard_result.reason
 
 
+def test_default_completion_retries_transient_errors():
+    agent = ArabicAgent(name="agent", model="gpt-4o")
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = {
+            "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "رد"}}]
+        }
+        agent.run("سؤال")
+
+    assert mock_completion.call_args.kwargs["num_retries"] == 2
+
+
 def test_tools_are_passed_to_completion_as_schema():
     completion_fn, captured = _stub_completion(content="تم")
     agent = ArabicAgent(name="agent", model="gpt-4o", completion_fn=completion_fn)
@@ -103,3 +118,75 @@ def test_tools_are_passed_to_completion_as_schema():
     agent.run("سؤال")
 
     assert captured["kwargs"]["tools"][0]["function"]["name"] == "echo"
+
+
+def _tool_call_response(name="echo", arguments='{"x": 1}', call_id="call_1"):
+    return {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
+                    ],
+                },
+            }
+        ]
+    }
+
+
+def test_agent_executes_tool_call_and_returns_final_response():
+    calls = []
+
+    def completion_fn(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return _tool_call_response()
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "تم تنفيذ الأداة [1]."},
+                }
+            ]
+        }
+
+    agent = ArabicAgent(name="agent", model="gpt-4o", completion_fn=completion_fn)
+    agent.add_tool(_EchoTool())
+
+    result = agent.run("نفذ الأداة")
+
+    assert result.response == "تم تنفيذ الأداة [1]."
+    assert len(calls) == 2
+
+    tool_messages = [m for m in calls[1]["messages"] if m["role"] == "tool"]
+    assert tool_messages[0]["tool_call_id"] == "call_1"
+    assert json.loads(tool_messages[0]["content"]) == {"x": 1}
+
+
+def test_agent_reports_error_for_unknown_tool_call():
+    calls = []
+
+    def completion_fn(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return _tool_call_response(name="not_registered")
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "تعذر تنفيذ الطلب."},
+                }
+            ]
+        }
+
+    agent = ArabicAgent(name="agent", model="gpt-4o", completion_fn=completion_fn)
+    agent.add_tool(_EchoTool())
+
+    result = agent.run("نفذ أداة غير موجودة")
+
+    assert result.response == "تعذر تنفيذ الطلب."
+    tool_messages = [m for m in calls[1]["messages"] if m["role"] == "tool"]
+    assert "error" in json.loads(tool_messages[0]["content"])

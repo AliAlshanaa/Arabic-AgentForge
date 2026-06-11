@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -31,6 +32,10 @@ class AgentResponse:
 
 class ArabicAgent:
     """An LLM-backed agent with Arabic text handling, tool calling, and a hallucination guard."""
+
+    # Safety cap on back-and-forth tool calls within a single `run()`, in case the
+    # model keeps requesting tools instead of producing a final answer.
+    MAX_TOOL_ITERATIONS = 5
 
     def __init__(
         self,
@@ -70,7 +75,9 @@ class ArabicAgent:
         # when callers supply their own `completion_fn`.
         from litellm import completion
 
-        return completion(**kwargs)
+        # Providers occasionally return transient 503s under load; retry a couple of
+        # times before surfacing the error to the caller.
+        return completion(num_retries=2, **kwargs)
 
     def _build_messages(self, task: str) -> list[dict[str, str]]:
         system_parts = [self.system_prompt]
@@ -87,16 +94,34 @@ class ArabicAgent:
         return messages
 
     def run(self, task: str, sources: list[Citation] | None = None) -> AgentResponse:
-        """Run `task` through the agent's LLM, returning the response, citations, and guard result."""
+        """Run `task` through the agent's LLM, executing any tool calls, and return the response."""
         normalized_task = self._processor.normalize(task, strip_diacritics=False)
         detected_dialect = self._dialect_handler.detect(normalized_task)
 
         messages = self._build_messages(task)
-        kwargs: dict[str, Any] = {"model": self.model, "messages": messages}
+        kwargs: dict[str, Any] = {"model": self.model}
         if self.tools:
             kwargs["tools"] = [tool.to_schema() for tool in self.tools.values()]
 
-        result = self._completion_fn(**kwargs)
+        result = self._completion_fn(messages=messages, **kwargs)
+
+        for _ in range(self.MAX_TOOL_ITERATIONS):
+            tool_calls = self._extract_tool_calls(result)
+            if not tool_calls:
+                break
+
+            messages.append(self._extract_message(result))
+            for call in tool_calls:
+                tool_result = self._execute_tool_call(call)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps(tool_result, ensure_ascii=False),
+                    }
+                )
+            result = self._completion_fn(messages=messages, **kwargs)
+
         content = self._extract_content(result)
 
         self.memory.add_user(task)
@@ -114,15 +139,73 @@ class ArabicAgent:
             guard_result=guard_result,
         )
 
-    @staticmethod
-    def _extract_content(result: Any) -> str:
-        choice = result["choices"][0]
-        message = choice["message"] if isinstance(choice, dict) else choice.message
-        content = message["content"] if isinstance(message, dict) else message.content
-        return content or ""
+    def _execute_tool_call(self, call: dict[str, Any]) -> Any:
+        """Run the tool requested by `call` and return a JSON-serializable result."""
+        tool = self.tools.get(call["name"])
+        if tool is None:
+            return {"error": f"unknown tool: {call['name']}"}
+        try:
+            return tool.run(**call["arguments"])
+        except Exception as exc:  # let the model see the error and decide how to recover
+            return {"error": str(exc)}
 
     @staticmethod
-    def _estimate_confidence(result: Any) -> float:
-        choice = result["choices"][0]
-        finish_reason = choice["finish_reason"] if isinstance(choice, dict) else choice.finish_reason
+    def _get(obj: Any, key: str, default: Any = None) -> Any:
+        """Read `key` from `obj`, whether it's a dict or an object (e.g. litellm's response types)."""
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    @classmethod
+    def _extract_content(cls, result: Any) -> str:
+        choice = cls._get(result, "choices")[0]
+        message = cls._get(choice, "message")
+        return cls._get(message, "content") or ""
+
+    @classmethod
+    def _extract_message(cls, result: Any) -> dict[str, Any]:
+        """Return the assistant message from `result` as a plain dict, including any tool calls."""
+        choice = cls._get(result, "choices")[0]
+        message = cls._get(choice, "message")
+
+        message_dict: dict[str, Any] = {
+            "role": cls._get(message, "role", "assistant"),
+            "content": cls._get(message, "content"),
+        }
+        tool_calls = cls._get(message, "tool_calls")
+        if tool_calls:
+            message_dict["tool_calls"] = [
+                {
+                    "id": cls._get(call, "id"),
+                    "type": "function",
+                    "function": {
+                        "name": cls._get(cls._get(call, "function"), "name"),
+                        "arguments": cls._get(cls._get(call, "function"), "arguments"),
+                    },
+                }
+                for call in tool_calls
+            ]
+        return message_dict
+
+    @classmethod
+    def _extract_tool_calls(cls, result: Any) -> list[dict[str, Any]]:
+        """Return `[{"id", "name", "arguments"}, ...]` for any tool calls the model requested."""
+        choice = cls._get(result, "choices")[0]
+        message = cls._get(choice, "message")
+        tool_calls = cls._get(message, "tool_calls") or []
+
+        parsed = []
+        for call in tool_calls:
+            function = cls._get(call, "function")
+            try:
+                arguments = json.loads(cls._get(function, "arguments") or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+            parsed.append({"id": cls._get(call, "id"), "name": cls._get(function, "name"), "arguments": arguments})
+        return parsed
+
+    @classmethod
+    def _estimate_confidence(cls, result: Any) -> float:
+        choice = cls._get(result, "choices")[0]
+        finish_reason = cls._get(choice, "finish_reason")
         return 1.0 if finish_reason == "stop" else 0.5

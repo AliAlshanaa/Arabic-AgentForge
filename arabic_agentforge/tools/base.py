@@ -12,6 +12,11 @@ class BaseTool(ABC):
     name: str
     description: str
 
+    # JSON Schema for `run()`'s keyword arguments, in OpenAI function-calling format.
+    # Subclasses should override this with their actual parameters so the LLM knows
+    # what arguments to pass; an empty schema means "call with no arguments".
+    parameters: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+
     @abstractmethod
     def run(self, **kwargs: Any) -> Any:
         """Execute the tool and return a JSON-serializable result."""
@@ -23,6 +28,6 @@ class BaseTool(ABC):
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": {"type": "object", "properties": {}, "additionalProperties": True},
+                "parameters": self.parameters,
             },
         }

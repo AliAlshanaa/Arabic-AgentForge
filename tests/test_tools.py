@@ -2,7 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arabic_agentforge.tools import ERPNextTool, N8nTool, TelegramTool
+from arabic_agentforge.connectors.erp_bridge import ERPBridge
+from arabic_agentforge.tools import CreateMaintenanceTicketTool, ERPNextTool, N8nTool, TelegramTool
 
 
 def test_erpnext_sets_auth_header_when_credentials_provided():
@@ -71,6 +72,60 @@ def test_telegram_send_message():
             json={"chat_id": 42, "text": "مرحبا"},
             timeout=30,
         )
+
+
+def test_telegram_get_me():
+    tool = TelegramTool(bot_token="123:ABC")
+    with patch("arabic_agentforge.tools.telegram.requests.get") as mock_get:
+        mock_get.return_value.json.return_value = {"ok": True, "result": {"username": "my_bot"}}
+        mock_get.return_value.raise_for_status.return_value = None
+
+        result = tool.get_me()
+
+        assert result == {"username": "my_bot"}
+        mock_get.assert_called_once_with("https://api.telegram.org/bot123:ABC/getMe", timeout=30)
+
+
+def test_telegram_get_updates():
+    tool = TelegramTool(bot_token="123:ABC")
+    with patch("arabic_agentforge.tools.telegram.requests.get") as mock_get:
+        mock_get.return_value.json.return_value = {"ok": True, "result": [{"update_id": 1}]}
+        mock_get.return_value.raise_for_status.return_value = None
+
+        result = tool.get_updates(offset=1)
+
+        assert result == [{"update_id": 1}]
+        mock_get.assert_called_once_with(
+            "https://api.telegram.org/bot123:ABC/getUpdates",
+            params={"timeout": 30, "offset": 1},
+            timeout=60,
+        )
+
+
+def test_create_maintenance_ticket_tool_schema_has_required_parameters():
+    tool = CreateMaintenanceTicketTool(bridge=MagicMock())
+
+    schema = tool.to_schema()
+
+    assert schema["function"]["name"] == "create_maintenance_ticket"
+    assert set(schema["function"]["parameters"]["properties"]) == {"subject", "description"}
+    assert schema["function"]["parameters"]["required"] == ["subject", "description"]
+
+
+def test_create_maintenance_ticket_tool_run_calls_bridge():
+    connector = MagicMock()
+    connector.run.return_value = {"name": "ISS-0003"}
+    bridge = ERPBridge(connector)
+    tool = CreateMaintenanceTicketTool(bridge=bridge)
+
+    result = tool.run(subject="عطل طابعة", description="الطابعة لا تعمل في القسم الثالث")
+
+    assert result == {"name": "ISS-0003"}
+    connector.run.assert_called_once_with(
+        "create",
+        "Issue",
+        fields={"subject": "عطل طابعة", "description": "الطابعة لا تعمل في القسم الثالث"},
+    )
 
 
 def test_n8n_trigger_returns_json_response():

@@ -62,7 +62,7 @@ from arabic_agentforge.guards import ArabicHallucinationGuard
 # Create an Arabic-native agent
 agent = ArabicAgent(
     name="inventory-agent",
-    model="gemini-1.5-pro",   # or "qwen2.5", "gpt-4o"
+    model="gemini/gemini-2.5-flash",   # or "qwen2.5", "gpt-4o"
     dialect="gulf",
     hallucination_guard=ArabicHallucinationGuard(
         citation_required=True,
@@ -132,15 +132,17 @@ arabic-agentforge/
 │   │   ├── hallucination.py      # Hallucination prevention
 │   │   └── citation.py           # Citation enforcement
 │   ├── tools/
+│   │   ├── base.py                # Tool interface + LLM function-calling schema
 │   │   ├── erpnext.py            # ERPNext connector
-│   │   ├── telegram.py           # Telegram connector
+│   │   ├── erp_actions.py        # Focused, LLM-callable ERP actions (e.g. maintenance tickets)
+│   │   ├── telegram.py           # Telegram connector (send + receive)
 │   │   └── n8n.py                # n8n webhook connector
 │   └── connectors/
 │       └── erp_bridge.py         # Generic ERP bridge
 ├── examples/
-│   ├── 01_basic_agent.py
-│   ├── 02_multi_agent_erp.py
-│   └── 03_rag_arabic_docs.py
+│   ├── 00_check_setup.py         # Verify Telegram/ERPNext/Gemini credentials
+│   ├── 01_basic_agent.py         # Offline demo with a stubbed LLM
+│   └── 02_telegram_erp_bot.py    # Live Telegram bot -> Gemini -> ERPNext
 ├── docs/
 │   ├── quickstart.md
 │   └── api_reference.md
@@ -195,7 +197,7 @@ assistant = ArabicAgent(
 
 | Model | Arabic Quality | Speed | Cost |
 |-------|---------------|-------|------|
-| Gemini 1.5 Pro | ⭐⭐⭐⭐⭐ | Fast | Medium |
+| Gemini 2.5 Flash | ⭐⭐⭐⭐⭐ | Fast | Low |
 | Qwen 2.5 72B | ⭐⭐⭐⭐⭐ | Medium | Low |
 | GPT-4o | ⭐⭐⭐⭐ | Fast | High |
 | Llama 3.1 (local) | ⭐⭐⭐ | Slow | Free |
@@ -220,6 +222,22 @@ agent.add_tool(erp)
 # Natural language → ERP action, fully automated
 result = agent.run("Add 50 printers to the Riyadh warehouse")
 # Automatically creates a Stock Entry in ERPNext
+```
+
+---
+
+## Live Example: Telegram + ERPNext Bot
+
+[`examples/02_telegram_erp_bot.py`](examples/02_telegram_erp_bot.py) is a working bot validated end-to-end:
+a user messages it in Arabic (any dialect), the agent calls Gemini, decides whether to open a
+maintenance ticket via the `create_maintenance_ticket` tool, creates it in ERPNext through
+`ERPBridge`, and replies in MSA confirming the ticket number.
+
+```bash
+pip install -e ".[examples]"
+cp .env.example .env            # fill in GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, ERPNEXT_*
+python examples/00_check_setup.py   # verify all three services are reachable
+python examples/02_telegram_erp_bot.py
 ```
 
 ---
