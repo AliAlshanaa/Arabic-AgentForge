@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
 
 from .base import BaseTool
+
+logger = logging.getLogger(__name__)
 
 
 class ERPNextTool(BaseTool):
@@ -38,15 +41,19 @@ class ERPNextTool(BaseTool):
 
     def get_doc(self, doctype: str, name: str) -> dict[str, Any]:
         """Fetch a single ERPNext document by doctype and name."""
+        logger.info("ERPNext API: GET %s/%s", doctype, name)
         response = self._session.get(self._url(doctype, name), timeout=self.timeout)
         response.raise_for_status()
         return response.json()["data"]
 
     def create_doc(self, doctype: str, fields: dict[str, Any]) -> dict[str, Any]:
         """Create a new ERPNext document of `doctype` with the given `fields`."""
+        logger.info("ERPNext API: CREATE %s", doctype)
         response = self._session.post(self._url(doctype), json=fields, timeout=self.timeout)
         response.raise_for_status()
-        return response.json()["data"]
+        data = response.json()["data"]
+        logger.info("ERPNext API: created %s '%s'", doctype, data.get("name"))
+        return data
 
     def list_docs(
         self,
@@ -55,6 +62,7 @@ class ERPNextTool(BaseTool):
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         """List ERPNext documents of `doctype`, optionally filtered by exact field matches."""
+        logger.info("ERPNext API: LIST %s (filters=%s, limit=%d)", doctype, filters, limit)
         params: dict[str, Any] = {"limit_page_length": limit}
         if filters:
             params["filters"] = str([[key, "=", value] for key, value in filters.items()])

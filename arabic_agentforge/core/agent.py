@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -12,6 +13,8 @@ from ..nlp.arabic_processor import ArabicTextProcessor
 from ..nlp.dialect_handler import Dialect, DialectHandler
 from ..tools.base import BaseTool
 from .memory import ConversationMemory
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
     "أنت مساعد ذكاء اصطناعي يتحدث العربية بطلاقة ويفهم اللهجات المحلية. "
@@ -97,19 +100,24 @@ class ArabicAgent:
         """Run `task` through the agent's LLM, executing any tool calls, and return the response."""
         normalized_task = self._processor.normalize(task, strip_diacritics=False)
         detected_dialect = self._dialect_handler.detect(normalized_task)
+        logger.info("agent '%s' received task (dialect=%s): %s", self.name, detected_dialect.value, task)
 
         messages = self._build_messages(task)
         kwargs: dict[str, Any] = {"model": self.model}
         if self.tools:
             kwargs["tools"] = [tool.to_schema() for tool in self.tools.values()]
 
-        result = self._completion_fn(messages=messages, **kwargs)
+        result = self._call_model(messages, **kwargs)
 
-        for _ in range(self.MAX_TOOL_ITERATIONS):
+        for iteration in range(self.MAX_TOOL_ITERATIONS):
             tool_calls = self._extract_tool_calls(result)
             if not tool_calls:
                 break
 
+            logger.info(
+                "agent '%s' requested %d tool call(s) (iteration %d/%d)",
+                self.name, len(tool_calls), iteration + 1, self.MAX_TOOL_ITERATIONS,
+            )
             messages.append(self._extract_message(result))
             for call in tool_calls:
                 tool_result = self._execute_tool_call(call)
@@ -120,9 +128,10 @@ class ArabicAgent:
                         "content": json.dumps(tool_result, ensure_ascii=False),
                     }
                 )
-            result = self._completion_fn(messages=messages, **kwargs)
+            result = self._call_model(messages, **kwargs)
 
         content = self._extract_content(result)
+        logger.info("agent '%s' produced response (%d chars)", self.name, len(content))
 
         self.memory.add_user(task)
         self.memory.add_assistant(content)
@@ -131,6 +140,10 @@ class ArabicAgent:
         if self.hallucination_guard is not None:
             confidence = self._estimate_confidence(result)
             guard_result = self.hallucination_guard.check(content, confidence=confidence, sources=sources)
+            if guard_result.passed:
+                logger.info("agent '%s' hallucination guard passed (confidence=%.2f)", self.name, confidence)
+            else:
+                logger.warning("agent '%s' hallucination guard failed: %s", self.name, guard_result.reason)
 
         return AgentResponse(
             response=content,
@@ -139,14 +152,25 @@ class ArabicAgent:
             guard_result=guard_result,
         )
 
+    def _call_model(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        """Call the LLM via `_completion_fn`, logging the request for debugging."""
+        logger.debug("agent '%s' calling model '%s' with %d message(s)", self.name, self.model, len(messages))
+        return self._completion_fn(messages=messages, **kwargs)
+
     def _execute_tool_call(self, call: dict[str, Any]) -> Any:
         """Run the tool requested by `call` and return a JSON-serializable result."""
         tool = self.tools.get(call["name"])
         if tool is None:
+            logger.warning("agent '%s' requested unknown tool '%s'", self.name, call["name"])
             return {"error": f"unknown tool: {call['name']}"}
+
+        logger.info("agent '%s' calling tool '%s' with args=%s", self.name, call["name"], call["arguments"])
         try:
-            return tool.run(**call["arguments"])
+            result = tool.run(**call["arguments"])
+            logger.debug("agent '%s' tool '%s' returned: %s", self.name, call["name"], result)
+            return result
         except Exception as exc:  # let the model see the error and decide how to recover
+            logger.exception("agent '%s' tool '%s' raised an error", self.name, call["name"])
             return {"error": str(exc)}
 
     @staticmethod

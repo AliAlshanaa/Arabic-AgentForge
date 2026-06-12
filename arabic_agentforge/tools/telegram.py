@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
 
 from .base import BaseTool
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramTool(BaseTool):
@@ -22,6 +25,7 @@ class TelegramTool(BaseTool):
 
     def send_message(self, chat_id: str | int, text: str, parse_mode: str | None = None) -> dict[str, Any]:
         """Send `text` to `chat_id`, optionally formatted with `parse_mode` (e.g. "Markdown")."""
+        logger.info("Telegram: sending message to chat_id=%s (%d chars)", chat_id, len(text))
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
         if parse_mode:
             payload["parse_mode"] = parse_mode
@@ -37,12 +41,16 @@ class TelegramTool(BaseTool):
 
     def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[dict[str, Any]]:
         """Long-poll for new messages, returning Telegram `Update` objects since `offset`."""
+        logger.debug("Telegram: polling for updates (offset=%s)", offset)
         params: dict[str, Any] = {"timeout": timeout}
         if offset is not None:
             params["offset"] = offset
         response = requests.get(f"{self._base_url}/getUpdates", params=params, timeout=timeout + self.timeout)
         response.raise_for_status()
-        return response.json()["result"]
+        updates = response.json()["result"]
+        if updates:
+            logger.debug("Telegram: received %d update(s)", len(updates))
+        return updates
 
     def run(self, chat_id: str | int, text: str, parse_mode: str | None = None) -> Any:
         return self.send_message(chat_id, text, parse_mode)

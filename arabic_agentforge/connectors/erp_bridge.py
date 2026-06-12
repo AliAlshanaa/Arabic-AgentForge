@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class ERPConnector(Protocol):
@@ -19,6 +22,7 @@ class ERPBridge:
 
     def create_stock_entry(self, item_code: str, qty: float, warehouse: str, **extra: Any) -> Any:
         """Create a Material Receipt Stock Entry for `qty` of `item_code` into `warehouse`."""
+        logger.info("ERP: creating stock entry (item=%s, qty=%s, warehouse=%s)", item_code, qty, warehouse)
         fields = {
             "stock_entry_type": "Material Receipt",
             "items": [{"item_code": item_code, "qty": qty, "t_warehouse": warehouse}],
@@ -28,9 +32,11 @@ class ERPBridge:
 
     def create_maintenance_ticket(self, subject: str, description: str, **extra: Any) -> Any:
         """Open an Issue/maintenance ticket with `subject` and `description`."""
+        logger.info("ERP: creating maintenance ticket (subject=%s)", subject)
         fields = {"subject": subject, "description": description, **extra}
         return self.connector.run("create", "Issue", fields=fields)
 
     def get_ticket_status(self, ticket_name: str) -> Any:
         """Fetch the current state of a maintenance ticket by its name/ID."""
+        logger.info("ERP: fetching ticket status (name=%s)", ticket_name)
         return self.connector.run("get", "Issue", name=ticket_name)

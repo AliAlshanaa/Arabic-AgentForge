@@ -30,15 +30,18 @@ Run
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from arabic_agentforge import ArabicAgent
+from arabic_agentforge import ArabicAgent, setup_logging
 from arabic_agentforge.connectors.erp_bridge import ERPBridge
 from arabic_agentforge.guards import ArabicHallucinationGuard
 from arabic_agentforge.tools import CreateMaintenanceTicketTool, ERPNextTool, TelegramTool
+
+logger = logging.getLogger(__name__)
 
 _REQUIRED_VARS = [
     "GEMINI_API_KEY",
@@ -97,7 +100,8 @@ def build_agent(config: Config) -> ArabicAgent:
 
 
 def run_bot(agent: ArabicAgent, telegram: TelegramTool) -> None:
-    print("Bot is running. Press Ctrl+C to stop.")
+    bot_info = telegram.get_me()
+    logger.info("Bot @%s is online and listening for messages. Press Ctrl+C to stop.", bot_info["username"])
     offset: int | None = None
     while True:
         for update in telegram.get_updates(offset=offset):
@@ -107,15 +111,17 @@ def run_bot(agent: ArabicAgent, telegram: TelegramTool) -> None:
                 continue
 
             chat_id = message["chat"]["id"]
+            logger.info("received message from chat_id=%s: %s", chat_id, message["text"])
             try:
                 reply = agent.run(message["text"]).response
-            except Exception as exc:
-                print(f"Error handling message from {chat_id}: {exc}")
+            except Exception:
+                logger.exception("error handling message from chat_id=%s", chat_id)
                 reply = "عذرًا، حدث خطأ مؤقت أثناء معالجة طلبك. حاول مرة أخرى بعد قليل."
 
             telegram.send_message(chat_id, reply)
 
 
 if __name__ == "__main__":
+    setup_logging()
     config = Config.from_env()
     run_bot(build_agent(config), TelegramTool(bot_token=config.telegram_bot_token))

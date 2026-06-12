@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from .agent import AgentResponse, ArabicAgent
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,9 +47,13 @@ class AgentOrchestrator:
             )
             choice = self.router.run(routing_prompt).response.strip()
             if choice in self.agents:
+                logger.info("orchestrator routed task to agent '%s'", choice)
                 return choice
+            logger.warning("router chose unknown agent '%s'; falling back to default", choice)
 
-        return next(iter(self.agents))
+        default = next(iter(self.agents))
+        logger.info("orchestrator routed task to default agent '%s'", default)
+        return default
 
     def run(self, task: str) -> OrchestratorResult:
         """Route `task` to the appropriate agent and return its response."""
