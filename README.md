@@ -115,6 +115,29 @@ User Input (Arabic / English)
 
 ---
 
+## Diacritics (Tashkeel) Support
+
+Arabic AgentForge's NLP layer correctly handles both diacritized (مُشَكَّل) and undiacritized
+text — including Qur'anic marks like the dagger alef (ٰ) — so dialect detection works
+either way, while diacritics in user input and model responses are preserved end-to-end.
+
+```python
+from arabic_agentforge.nlp import ArabicTextProcessor
+
+processor = ArabicTextProcessor()
+text = "الرَّحْمَٰنِ الرَّحِيمِ"
+
+processor.has_diacritics(text)          # True
+processor.normalize_for_display(text)   # "الرَّحْمَٰنِ الرَّحِيمِ"  (tashkeel preserved, for output)
+processor.normalize_for_matching(text)  # "الرحمن الرحيم"          (tashkeel stripped, for search/matching)
+```
+
+`ArabicAgent` uses `normalize_for_matching()` internally for dialect detection, so a fully
+diacritized message like "وِشْ هذا، الطابعة ما تطبّع" is still correctly detected as Gulf
+dialect — while the original, fully diacritized text is what gets sent to the LLM.
+
+---
+
 ## Project Structure
 
 ```

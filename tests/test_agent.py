@@ -42,6 +42,15 @@ def test_run_returns_response_and_detected_dialect():
     assert result.detected_dialect == Dialect.GULF
 
 
+def test_run_detects_dialect_in_diacritized_text():
+    completion_fn, _ = _stub_completion(content="تم تنفيذ المهمة [1].")
+    agent = ArabicAgent(name="agent", model="gpt-4o", completion_fn=completion_fn)
+
+    result = agent.run("وِشْ الأخبار اليوم؟")
+
+    assert result.detected_dialect == Dialect.GULF
+
+
 def test_run_updates_conversation_memory():
     completion_fn, _ = _stub_completion(content="رد")
     agent = ArabicAgent(name="agent", model="gpt-4o", completion_fn=completion_fn)

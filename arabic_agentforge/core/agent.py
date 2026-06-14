@@ -98,7 +98,7 @@ class ArabicAgent:
 
     def run(self, task: str, sources: list[Citation] | None = None) -> AgentResponse:
         """Run `task` through the agent's LLM, executing any tool calls, and return the response."""
-        normalized_task = self._processor.normalize(task, strip_diacritics=False)
+        normalized_task = self._processor.normalize_for_matching(task)
         detected_dialect = self._dialect_handler.detect(normalized_task)
         logger.info("agent '%s' received task (dialect=%s): %s", self.name, detected_dialect.value, task)
 

@@ -40,6 +40,10 @@ class ArabicTextProcessor:
         """Remove tashkeel (diacritical marks) from `text`."""
         return _DIACRITICS_PATTERN.sub("", text)
 
+    def has_diacritics(self, text: str) -> bool:
+        """Return True if `text` contains any tashkeel (including Quranic marks)."""
+        return _DIACRITICS_PATTERN.search(text) is not None
+
     def remove_tatweel(self, text: str) -> str:
         """Remove the Arabic tatweel/kashida elongation character."""
         return text.replace(_TATWEEL, "")
@@ -65,6 +69,15 @@ class ArabicTextProcessor:
         if normalize_letters:
             text = self.normalize_letters(text)
         return re.sub(r"\s+", " ", text).strip()
+
+    def normalize_for_display(self, text: str) -> str:
+        """Apply Unicode canonical normalization while preserving tashkeel and letter forms."""
+        return self.normalize(text, strip_diacritics=False, normalize_letters=False)
+
+    def normalize_for_matching(self, text: str) -> str:
+        """Normalize for search/comparison: strips tashkeel and unifies letter-shape variants
+        so that diacritized and non-diacritized text compare equal."""
+        return self.normalize(text, strip_diacritics=True, normalize_letters=True)
 
     def is_arabic(self, text: str, threshold: float = 0.3) -> bool:
         """Return True if at least `threshold` of the alphabetic characters are Arabic."""
