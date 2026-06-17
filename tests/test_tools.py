@@ -60,46 +60,46 @@ def test_erpnext_unsupported_action_raises():
 
 def test_telegram_send_message():
     tool = TelegramTool(bot_token="123:ABC")
-    with patch("arabic_agentforge.tools.telegram.requests.post") as mock_post:
-        mock_post.return_value.json.return_value = {"ok": True}
-        mock_post.return_value.raise_for_status.return_value = None
+    tool._session = MagicMock()
+    tool._session.post.return_value.json.return_value = {"ok": True}
+    tool._session.post.return_value.raise_for_status.return_value = None
 
-        result = tool.run(chat_id=42, text="مرحبا")
+    result = tool.run(chat_id=42, text="مرحبا")
 
-        assert result == {"ok": True}
-        mock_post.assert_called_once_with(
-            "https://api.telegram.org/bot123:ABC/sendMessage",
-            json={"chat_id": 42, "text": "مرحبا"},
-            timeout=30,
-        )
+    assert result == {"ok": True}
+    tool._session.post.assert_called_once_with(
+        "https://api.telegram.org/bot123:ABC/sendMessage",
+        json={"chat_id": 42, "text": "مرحبا"},
+        timeout=30,
+    )
 
 
 def test_telegram_get_me():
     tool = TelegramTool(bot_token="123:ABC")
-    with patch("arabic_agentforge.tools.telegram.requests.get") as mock_get:
-        mock_get.return_value.json.return_value = {"ok": True, "result": {"username": "my_bot"}}
-        mock_get.return_value.raise_for_status.return_value = None
+    tool._session = MagicMock()
+    tool._session.get.return_value.json.return_value = {"ok": True, "result": {"username": "my_bot"}}
+    tool._session.get.return_value.raise_for_status.return_value = None
 
-        result = tool.get_me()
+    result = tool.get_me()
 
-        assert result == {"username": "my_bot"}
-        mock_get.assert_called_once_with("https://api.telegram.org/bot123:ABC/getMe", timeout=30)
+    assert result == {"username": "my_bot"}
+    tool._session.get.assert_called_once_with("https://api.telegram.org/bot123:ABC/getMe", timeout=30)
 
 
 def test_telegram_get_updates():
     tool = TelegramTool(bot_token="123:ABC")
-    with patch("arabic_agentforge.tools.telegram.requests.get") as mock_get:
-        mock_get.return_value.json.return_value = {"ok": True, "result": [{"update_id": 1}]}
-        mock_get.return_value.raise_for_status.return_value = None
+    tool._session = MagicMock()
+    tool._session.get.return_value.json.return_value = {"ok": True, "result": [{"update_id": 1}]}
+    tool._session.get.return_value.raise_for_status.return_value = None
 
-        result = tool.get_updates(offset=1)
+    result = tool.get_updates(offset=1)
 
-        assert result == [{"update_id": 1}]
-        mock_get.assert_called_once_with(
-            "https://api.telegram.org/bot123:ABC/getUpdates",
-            params={"timeout": 30, "offset": 1},
-            timeout=60,
-        )
+    assert result == [{"update_id": 1}]
+    tool._session.get.assert_called_once_with(
+        "https://api.telegram.org/bot123:ABC/getUpdates",
+        params={"timeout": 30, "offset": 1},
+        timeout=60,
+    )
 
 
 def test_create_maintenance_ticket_tool_schema_has_required_parameters():
@@ -135,7 +135,7 @@ def test_n8n_trigger_returns_json_response():
         mock_post.return_value.json.return_value = {"status": "queued"}
         mock_post.return_value.raise_for_status.return_value = None
 
-        result = tool.run(item_code="PRT-001", qty=50)
+        result = tool.run(payload={"item_code": "PRT-001", "qty": 50})
 
         assert result == {"status": "queued"}
         mock_post.assert_called_once_with(

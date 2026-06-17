@@ -20,10 +20,19 @@ def test_fails_when_confidence_below_threshold():
     assert "confidence" in result.reason
 
 
-def test_fails_when_citation_required_but_missing():
+def test_passes_when_citation_required_but_no_sources():
     guard = ArabicHallucinationGuard(citation_required=True, confidence_threshold=0.85)
 
     result = guard.check("تم إنشاء التذكرة بنجاح.", confidence=0.95, sources=[])
+
+    assert result.passed is True
+
+
+def test_fails_when_citation_required_with_sources_but_missing_markers():
+    guard = ArabicHallucinationGuard(citation_required=True, confidence_threshold=0.85)
+    sources = [Citation(source="ERPNext Issue #442")]
+
+    result = guard.check("تم إنشاء التذكرة بنجاح.", confidence=0.95, sources=sources)
 
     assert result.passed is False
     assert "citation" in result.reason

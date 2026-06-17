@@ -22,6 +22,25 @@ class ArabicChunker:
         sentences = _SENTENCE_SPLIT.split(text.strip())
         return [s.strip() for s in sentences if s.strip()]
 
+    def _split_long_sentence(self, sentence: str) -> list[str]:
+        """Hard-split a sentence that exceeds max_chunk_size on word boundaries."""
+        words = sentence.split()
+        parts: list[str] = []
+        buf: list[str] = []
+        buf_len = 0
+        for word in words:
+            added = len(word) + (1 if buf else 0)
+            if buf and buf_len + added > self.max_chunk_size:
+                parts.append(" ".join(buf))
+                buf = [word]
+                buf_len = len(word)
+            else:
+                buf.append(word)
+                buf_len += added
+        if buf:
+            parts.append(" ".join(buf))
+        return parts
+
     def chunk(self, text: str) -> list[str]:
         """Group sentences into chunks of at most `max_chunk_size` characters,
         carrying `overlap` characters from the previous chunk forward."""
@@ -31,6 +50,14 @@ class ArabicChunker:
         current_len = 0
 
         for sentence in sentences:
+            if len(sentence) > self.max_chunk_size:
+                if current:
+                    chunks.append(" ".join(current))
+                    current = []
+                    current_len = 0
+                chunks.extend(self._split_long_sentence(sentence))
+                continue
+
             if current and current_len + len(sentence) + 1 > self.max_chunk_size:
                 chunks.append(" ".join(current))
                 overlap_text = chunks[-1][-self.overlap:].strip()

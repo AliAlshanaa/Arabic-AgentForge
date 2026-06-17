@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -17,6 +18,37 @@ class ERPNextTool(BaseTool):
 
     name = "erpnext"
     description = "Create, read, and list documents (e.g. Stock Entry, Issue) in ERPNext."
+    parameters: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["get", "create", "list"],
+                "description": "The operation to perform.",
+            },
+            "doctype": {
+                "type": "string",
+                "description": "ERPNext DocType name, e.g. 'Issue', 'Stock Entry'.",
+            },
+            "name": {
+                "type": "string",
+                "description": "Document name (required for 'get').",
+            },
+            "fields": {
+                "type": "object",
+                "description": "Field values for the new document (required for 'create').",
+            },
+            "filters": {
+                "type": "object",
+                "description": "Key-value filters for 'list' (optional).",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max documents to return for 'list' (default 20).",
+            },
+        },
+        "required": ["action", "doctype"],
+    }
 
     def __init__(
         self,
@@ -39,19 +71,24 @@ class ERPNextTool(BaseTool):
             path += f"/{name}"
         return f"{self.base_url}{path}"
 
+    def _extract_data(self, body: dict[str, Any]) -> Any:
+        if "data" not in body:
+            raise ValueError(f"ERPNext response missing 'data' key: {body}")
+        return body["data"]
+
     def get_doc(self, doctype: str, name: str) -> dict[str, Any]:
         """Fetch a single ERPNext document by doctype and name."""
         logger.info("ERPNext API: GET %s/%s", doctype, name)
         response = self._session.get(self._url(doctype, name), timeout=self.timeout)
         response.raise_for_status()
-        return response.json()["data"]
+        return self._extract_data(response.json())
 
     def create_doc(self, doctype: str, fields: dict[str, Any]) -> dict[str, Any]:
         """Create a new ERPNext document of `doctype` with the given `fields`."""
         logger.info("ERPNext API: CREATE %s", doctype)
         response = self._session.post(self._url(doctype), json=fields, timeout=self.timeout)
         response.raise_for_status()
-        data = response.json()["data"]
+        data = self._extract_data(response.json())
         logger.info("ERPNext API: created %s '%s'", doctype, data.get("name"))
         return data
 
@@ -65,10 +102,10 @@ class ERPNextTool(BaseTool):
         logger.info("ERPNext API: LIST %s (filters=%s, limit=%d)", doctype, filters, limit)
         params: dict[str, Any] = {"limit_page_length": limit}
         if filters:
-            params["filters"] = str([[key, "=", value] for key, value in filters.items()])
+            params["filters"] = json.dumps([[key, "=", value] for key, value in filters.items()])
         response = self._session.get(self._url(doctype), params=params, timeout=self.timeout)
         response.raise_for_status()
-        return response.json()["data"]
+        return self._extract_data(response.json())
 
     def run(self, action: str, doctype: str, **kwargs: Any) -> Any:
         """Dispatch a "get", "create", or "list" action against ERPNext."""

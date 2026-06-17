@@ -37,8 +37,7 @@ class ArabicHallucinationGuard:
                 reason=f"confidence {confidence:.2f} below threshold {self.confidence_threshold:.2f}",
             )
 
-        if self.citation_required:
-            sources = sources or []
+        if self.citation_required and sources:
             if not self._citations.has_citations(response):
                 return GuardResult(passed=False, reason="response contains no citation markers")
             if not self._citations.validate(response, sources):

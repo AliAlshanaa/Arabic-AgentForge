@@ -45,11 +45,16 @@ class AgentOrchestrator:
                 f"اختر اسم الوكيل الأنسب للمهمة التالية من بين: {agent_names}.\n"
                 f"المهمة: {task}\nأجب باسم الوكيل فقط ودون أي شرح إضافي."
             )
-            choice = self.router.run(routing_prompt).response.strip()
-            if choice in self.agents:
-                logger.info("orchestrator routed task to agent '%s'", choice)
-                return choice
-            logger.warning("router chose unknown agent '%s'; falling back to default", choice)
+            raw_choice = self.router.run(routing_prompt).response.strip().strip("\"'`.,؟!。")
+            matched = None
+            for agent_name in self.agents:
+                if agent_name in raw_choice:
+                    matched = agent_name
+                    break
+            if matched:
+                logger.info("orchestrator routed task to agent '%s'", matched)
+                return matched
+            logger.warning("router chose unknown agent '%s'; falling back to default", raw_choice)
 
         default = next(iter(self.agents))
         logger.info("orchestrator routed task to default agent '%s'", default)

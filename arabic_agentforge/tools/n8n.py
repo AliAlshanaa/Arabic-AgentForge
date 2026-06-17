@@ -14,6 +14,16 @@ class N8nTool(BaseTool):
 
     name = "n8n"
     description = "Trigger an n8n automation workflow with a JSON payload."
+    parameters: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "payload": {
+                "type": "object",
+                "description": "JSON payload to send to the n8n webhook.",
+            },
+        },
+        "required": [],
+    }
 
     def __init__(self, webhook_url: str, timeout: int = 30):
         self.webhook_url = webhook_url
@@ -27,5 +37,5 @@ class N8nTool(BaseTool):
             return response.json()
         return response.text
 
-    def run(self, **payload: Any) -> Any:
-        return self.trigger(payload)
+    def run(self, payload: dict[str, Any] | None = None, **extra: Any) -> Any:
+        return self.trigger(payload or extra)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -56,7 +57,7 @@ class ArabicAgent:
     ):
         self.name = name
         self.model = model
-        self.dialect = Dialect(dialect) if isinstance(dialect, str) else dialect
+        self.dialect = Dialect(dialect.lower()) if isinstance(dialect, str) else dialect
         self.persona = persona
         self.system_prompt = system_prompt or _DEFAULT_SYSTEM_PROMPT
         self.hallucination_guard = hallucination_guard
@@ -181,15 +182,22 @@ class ArabicAgent:
         return getattr(obj, key, default)
 
     @classmethod
+    def _first_choice(cls, result: Any) -> Any:
+        choices = cls._get(result, "choices") or []
+        if not choices:
+            raise ValueError("LLM returned no choices")
+        return choices[0]
+
+    @classmethod
     def _extract_content(cls, result: Any) -> str:
-        choice = cls._get(result, "choices")[0]
+        choice = cls._first_choice(result)
         message = cls._get(choice, "message")
         return cls._get(message, "content") or ""
 
     @classmethod
     def _extract_message(cls, result: Any) -> dict[str, Any]:
         """Return the assistant message from `result` as a plain dict, including any tool calls."""
-        choice = cls._get(result, "choices")[0]
+        choice = cls._first_choice(result)
         message = cls._get(choice, "message")
 
         message_dict: dict[str, Any] = {
@@ -214,7 +222,7 @@ class ArabicAgent:
     @classmethod
     def _extract_tool_calls(cls, result: Any) -> list[dict[str, Any]]:
         """Return `[{"id", "name", "arguments"}, ...]` for any tool calls the model requested."""
-        choice = cls._get(result, "choices")[0]
+        choice = cls._first_choice(result)
         message = cls._get(choice, "message")
         tool_calls = cls._get(message, "tool_calls") or []
 
@@ -230,6 +238,19 @@ class ArabicAgent:
 
     @classmethod
     def _estimate_confidence(cls, result: Any) -> float:
-        choice = cls._get(result, "choices")[0]
+        choice = cls._first_choice(result)
         finish_reason = cls._get(choice, "finish_reason")
-        return 1.0 if finish_reason == "stop" else 0.5
+
+        if finish_reason != "stop":
+            return 0.3
+
+        content = cls._get(cls._get(choice, "message"), "content") or ""
+        score = 0.7
+        if len(content) > 20:
+            score += 0.1
+        if re.search(r"\[\d+\]", content):
+            score += 0.1
+        if len(content) > 100:
+            score += 0.1
+
+        return min(score, 1.0)
